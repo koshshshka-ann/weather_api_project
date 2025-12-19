@@ -2,14 +2,35 @@
 """
 Главный CLI интерфейс для погоды.
 """
-import sys
 import os
+import sys
 from pathlib import Path
 
-# Добавляем src в путь Python
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+# Решаем проблему импортов - добавляем src в путь
+current_dir = Path(__file__).parent.absolute()
+src_dir = current_dir / "src"
 
+# Проверяем существование src
+if not src_dir.exists():
+    print(f"❌ Папка {src_dir} не найдена!")
+    print("Создайте папку src/ и переместите туда все модули")
+    sys.exit(1)
+
+# Добавляем src в Python path
+sys.path.insert(0, str(src_dir))
+
+print(f"📁 Текущая папка: {current_dir}")
+print(f"📁 Папка src: {src_dir}")
+print(f"✅ src существует: {src_dir.exists()}")
+
+if src_dir.exists():
+    print("📋 Содержимое src/:")
+    for item in src_dir.iterdir():
+        print(f"  - {item.name}")
+
+# Теперь пробуем импортировать
 try:
+    # Импортируем из src (теперь они в sys.path)
     from dotenv import load_dotenv
     from api_client import WeatherAPIClient
     from cache_manager import CacheManager
@@ -19,8 +40,16 @@ try:
         format_city_comparison
     )
     from storage import init_user_data
+    from exceptions import WeatherAPIError, CityNotFoundError
+
+    print("✅ Все модули успешно импортированы!")
+
 except ImportError as e:
     print(f"❌ Ошибка импорта: {e}")
+    print("\nПроверьте:")
+    print("1. Все ли файлы в папке src/ ?")
+    print("2. Есть ли __init__.py в src/ ?")
+    print("3. Запустите python -c \"import sys; print('\\n'.join(sys.path))\"")
     sys.exit(1)
 
 
@@ -46,14 +75,12 @@ def show_current_weather(api_client: WeatherAPIClient):
             weather_data = api_client.get_current_weather(lat, lon)
             print("\n" + format_weather_output(weather_data, city))
 
-            # Предлагаем дополнительные данные
-            if input("\nПоказать качество воздуха? (да/нет): ").lower() in ['да', 'yes', 'y', 'д']:
-                components = api_client.get_air_pollution(lat, lon)
-                analysis = api_client.analyze_air_pollution(components, extended=True)
-                print("\n" + format_air_quality_report(analysis))
-
+        except CityNotFoundError:
+            print(f"❌ Город '{city}' не найден")
+        except WeatherAPIError as e:
+            print(f"❌ Ошибка API: {e}")
         except Exception as e:
-            print(f"❌ Ошибка: {e}")
+            print(f"❌ Неожиданная ошибка: {e}")
 
     elif choice == '2':
         try:
@@ -96,11 +123,14 @@ def show_forecast(api_client: WeatherAPIClient):
 
         # Показываем краткий прогноз по дням
         print("\n" + "-" * 30)
-        for i in range(5):
-            if i < len(forecast_data['list']) // 8:  # Примерно 8 прогнозов в день
-                day_forecast = format_forecast_day(forecast_data, i)
-                print(f"\n{day_forecast}")
+        for i in range(min(5, len(forecast_data['list']) // 8)):
+            day_forecast = format_forecast_day(forecast_data, i)
+            print(f"\n{day_forecast}")
 
+    except CityNotFoundError:
+        print(f"❌ Город '{city}' не найден")
+    except WeatherAPIError as e:
+        print(f"❌ Ошибка API: {e}")
     except Exception as e:
         print(f"❌ Ошибка: {e}")
 
@@ -131,6 +161,10 @@ def compare_cities(api_client: WeatherAPIClient):
 
         print("\n" + format_city_comparison(city1, weather1, city2, weather2))
 
+    except CityNotFoundError as e:
+        print(f"❌ Город не найден: {e}")
+    except WeatherAPIError as e:
+        print(f"❌ Ошибка API: {e}")
     except Exception as e:
         print(f"❌ Ошибка: {e}")
 
@@ -158,57 +192,12 @@ def show_air_quality(api_client: WeatherAPIClient):
 
         print("\n" + format_air_quality_report(analysis))
 
+    except CityNotFoundError:
+        print(f"❌ Город '{city}' не найден")
+    except WeatherAPIError as e:
+        print(f"❌ Ошибка API: {e}")
     except Exception as e:
         print(f"❌ Ошибка: {e}")
-
-
-def main():
-    """Главная функция CLI"""
-    load_dotenv()
-    API_KEY = os.getenv("OPENWEATHER_API_KEY")
-
-    if not API_KEY:
-        print("❌ ОШИБКА: API-ключ не найден!")
-        print("Добавьте в файл .env строку: OPENWEATHER_API_KEY=ваш_ключ")
-        return
-
-    # Инициализируем данные пользователей
-    init_user_data()
-
-    # Создаем клиент
-    cache_manager = CacheManager()
-    api_client = WeatherAPIClient(API_KEY, cache_manager)
-
-    while True:
-        print("\n" + "=" * 50)
-        print("🌤️  ГЛАВНОЕ МЕНЮ ПОГОДНОГО ПРИЛОЖЕНИЯ")
-        print("=" * 50)
-        print("1. Текущая погода")
-        print("2. Прогноз на 5 дней")
-        print("3. Сравнить города")
-        print("4. Качество воздуха")
-        print("5. Тест функций API")
-        print("0. Выход")
-
-        choice = input("\nВыберите действие (0-5): ").strip()
-
-        if choice == '0':
-            print("\n👋 До свидания!")
-            break
-        elif choice == '1':
-            show_current_weather(api_client)
-        elif choice == '2':
-            show_forecast(api_client)
-        elif choice == '3':
-            compare_cities(api_client)
-        elif choice == '4':
-            show_air_quality(api_client)
-        elif choice == '5':
-            test_api_functions(api_client)
-        else:
-            print("❌ Неверный выбор")
-
-        input("\nНажмите Enter для продолжения...")
 
 
 def test_api_functions(api_client: WeatherAPIClient):
@@ -241,14 +230,74 @@ def test_api_functions(api_client: WeatherAPIClient):
 
         print("\n✅ Все функции работают корректно!")
 
+    except CityNotFoundError:
+        print(f"❌ Тестовый город '{test_city}' не найден")
+    except WeatherAPIError as e:
+        print(f"❌ Ошибка API: {e}")
     except Exception as e:
-        print(f"❌ Ошибка тестирования: {e}")
+        print(f"❌ Неожиданная ошибка: {e}")
 
 
-if __name__ == "__main__":
+def main():
+    """Главная функция CLI"""
+    # Загружаем переменные окружения
+    load_dotenv()
+
+    API_KEY = os.getenv("OPENWEATHER_API_KEY")
+
+    if not API_KEY:
+        print("❌ ОШИБКА: API-ключ не найден!")
+        print("Добавьте в файл .env строку:")
+        print("OPENWEATHER_API_KEY=ваш_ключ_от_openweather")
+        print("\nПолучить ключ можно на: https://openweathermap.org/api")
+        return
+
     try:
-        main()
+        # Инициализируем данные пользователей
+        init_user_data()
+
+        # Создаем клиент
+        cache_manager = CacheManager()
+        api_client = WeatherAPIClient(API_KEY, cache_manager)
+
+        print("✅ Погодный клиент инициализирован")
+
+        while True:
+            print("\n" + "=" * 50)
+            print("🌤️  ГЛАВНОЕ МЕНЮ ПОГОДНОГО ПРИЛОЖЕНИЯ")
+            print("=" * 50)
+            print("1. Текущая погода")
+            print("2. Прогноз на 5 дней")
+            print("3. Сравнить города")
+            print("4. Качество воздуха")
+            print("5. Тест функций API")
+            print("0. Выход")
+
+            choice = input("\nВыберите действие (0-5): ").strip()
+
+            if choice == '0':
+                print("\n👋 До свидания!")
+                break
+            elif choice == '1':
+                show_current_weather(api_client)
+            elif choice == '2':
+                show_forecast(api_client)
+            elif choice == '3':
+                compare_cities(api_client)
+            elif choice == '4':
+                show_air_quality(api_client)
+            elif choice == '5':
+                test_api_functions(api_client)
+            else:
+                print("❌ Неверный выбор")
+
+            input("\nНажмите Enter для продолжения...")
+
     except KeyboardInterrupt:
         print("\n\n👋 Программа прервана пользователем.")
     except Exception as e:
         print(f"\n❌ Критическая ошибка: {e}")
+
+
+if __name__ == "__main__":
+    main()

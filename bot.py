@@ -175,9 +175,21 @@ except Exception as e:
     logger.error(f"❌ Ошибка инициализации: {e}")
     sys.exit(1)
 
-
 # ===== КОМАНДЫ БОТА =====
 # (Здесь продолжается остальной код бота, который ты уже видел)
+
+def create_back_markup(additional_buttons=None):
+    """Создает клавиатуру с кнопкой Назад и дополнительными кнопками"""
+    markup = types.InlineKeyboardMarkup()
+
+    if additional_buttons:
+        for btn in additional_buttons:
+            markup.add(btn)
+
+    back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+    markup.add(back_button)
+
+    return markup
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -241,12 +253,31 @@ def process_city_current(message):
                          parse_mode="Markdown", reply_markup=markup)
 
     except CityNotFoundError:
-        bot.send_message(message.chat.id, f"❌ Город '{city}' не найден")
+        # Кнопка назад при ошибке
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Город '{city}' не найден",
+                         reply_markup=markup)
+
     except WeatherAPIError as e:
-        bot.send_message(message.chat.id, f"⚠️ Ошибка: {str(e)}")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"⚠️ Ошибка: {str(e)}",
+                         reply_markup=markup)
+
     except Exception as e:
         logger.error(f"Ошибка: {e}")
-        bot.send_message(message.chat.id, "😔 Произошла ошибка")
+
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, "😔 Произошла ошибка",
+                         reply_markup=markup)
 
 
 @bot.message_handler(func=lambda message: message.text == "📅 Прогноз на 5 дней")
@@ -283,8 +314,29 @@ def process_city_forecast(message):
         bot.send_message(message.chat.id, summary,
                          parse_mode="Markdown", reply_markup=markup)
 
+    except CityNotFoundError:
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Город '{city}' не найден",
+                         reply_markup=markup)
+
+    except WeatherAPIError as e:
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Ошибка API: {str(e)}",
+                         reply_markup=markup)
+
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}",
+                         reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('day_'))
@@ -298,11 +350,33 @@ def handle_day_selection(call):
 
         day_forecast = format_forecast_day(forecast_data, day_idx)
 
-        # Кнопка назад
-        markup = types.InlineKeyboardMarkup()
-        btn_back = types.InlineKeyboardButton("◀️ Назад к прогнозу",
-                                              callback_data=f"forecast_{city}")
-        markup.add(btn_back)
+        # Улучшаем навигацию
+        markup = types.InlineKeyboardMarkup(row_width=2)
+
+        # Кнопки навигации по дням
+        nav_buttons = []
+        if day_idx > 0:
+            nav_buttons.append(types.InlineKeyboardButton(
+                "◀️ Предыдущий",
+                callback_data=f"day_{city}_{day_idx - 1}"
+            ))
+
+        nav_buttons.append(types.InlineKeyboardButton(
+            "📋 Сводка",
+            callback_data=f"forecast_{city}"
+        ))
+
+        if day_idx < 4 and day_idx < (len(forecast_data['list']) // 8) - 1:
+            nav_buttons.append(types.InlineKeyboardButton(
+                "Следующий ▶️",
+                callback_data=f"day_{city}_{day_idx + 1}"
+            ))
+
+        markup.add(*nav_buttons)
+        markup.add(types.InlineKeyboardButton(
+            "◀️ Назад в меню",
+            callback_data="back_to_main"
+        ))
 
         bot.edit_message_text(chat_id=call.message.chat.id,
                               message_id=call.message.message_id,
@@ -324,7 +398,12 @@ def ask_cities_compare(message):
 def process_cities_compare(message):
     cities = [c.strip() for c in message.text.split(',')]
     if len(cities) != 2:
-        bot.send_message(message.chat.id, "❌ Введите ровно два города через запятую")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, "❌ Введите ровно два города через запятую",
+                         reply_markup=markup)
         return
 
     city1, city2 = cities
@@ -341,12 +420,31 @@ def process_cities_compare(message):
         weather2 = weather_client.get_current_weather(lat2, lon2)
 
         response = format_city_comparison(city1, weather1, city2, weather2)
-        bot.send_message(message.chat.id, response, parse_mode="Markdown")
+
+        # Добавляем кнопку "Назад"
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, response,
+                         parse_mode="Markdown",
+                         reply_markup=markup)
 
     except CityNotFoundError as e:
-        bot.send_message(message.chat.id, f"❌ Город не найден: {str(e)}")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Город не найден: {str(e)}",
+                         reply_markup=markup)
+
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}",
+                         reply_markup=markup)
 
 
 @bot.message_handler(func=lambda message: message.text == "🌬️ Качество воздуха")
@@ -358,7 +456,12 @@ def ask_city_air(message):
 def process_city_air(message):
     city = message.text.strip()
     if not city:
-        bot.send_message(message.chat.id, "❌ Город не указан")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, "❌ Город не указан",
+                         reply_markup=markup)
         return
 
     try:
@@ -368,10 +471,39 @@ def process_city_air(message):
         analysis = weather_client.analyze_air_pollution(components, extended=True)
 
         response = format_air_quality_report(analysis)
-        bot.send_message(message.chat.id, response, parse_mode="Markdown")
+
+        # Добавляем кнопку "Назад"
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, response,
+                         parse_mode="Markdown",
+                         reply_markup=markup)
+
+    except CityNotFoundError:
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Город '{city}' не найден",
+                         reply_markup=markup)
+
+    except WeatherAPIError as e:
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Ошибка API: {str(e)}",
+                         reply_markup=markup)
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}",
+                         reply_markup=markup)
 
 
 @bot.message_handler(func=lambda message: message.text == "🔔 Уведомления")
@@ -437,14 +569,19 @@ def handle_location(message):
             bot.send_chat_action(message.chat.id, 'typing')
             weather_data = weather_client.get_current_weather(lat, lon)
 
-            # Пытаемся определить город по координатам (обратный геокодинг)
             city = f"{lat:.4f}, {lon:.4f}"
             response = format_weather_output(weather_data, city)
 
-            # Сохраняем локацию
             update_user_location(message.from_user.id, city, lat, lon)
 
-            bot.send_message(message.chat.id, response, parse_mode="Markdown")
+            # Добавляем кнопки
+            markup = types.InlineKeyboardMarkup()
+            back_button = types.InlineKeyboardButton("◀️ Назад в меню", callback_data="back_to_main")
+            markup.add(back_button)
+
+            bot.send_message(message.chat.id, response,
+                             parse_mode="Markdown",
+                             reply_markup=markup)
 
         except Exception as e:
             bot.send_message(message.chat.id, f"❌ Ошибка: {str(e)}")
@@ -461,7 +598,15 @@ def handle_air_quality_callback(call):
         analysis = weather_client.analyze_air_pollution(components, extended=True)
 
         response = format_air_quality_report(analysis)
-        bot.send_message(call.message.chat.id, response, parse_mode="Markdown")
+
+        # Добавляем кнопку "Назад"
+        markup = types.InlineKeyboardMarkup()
+        back_button = types.InlineKeyboardButton("◀️ Назад", callback_data="back_to_main")
+        markup.add(back_button)
+
+        bot.send_message(call.message.chat.id, response,
+                         parse_mode="Markdown",
+                         reply_markup=markup)
         bot.answer_callback_query(call.id)
 
     except Exception as e:

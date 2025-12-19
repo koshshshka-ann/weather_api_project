@@ -12,6 +12,9 @@ weather_cache.json
 # Данные пользователей
 User_Data.json
 
+# Служебные файлы
+debug.py
+
 # Distribution / packaging
 .Python
 build/

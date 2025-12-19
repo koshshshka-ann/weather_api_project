@@ -38,49 +38,92 @@ def format_weather_output(weather_data: Dict, city: str) -> str:
 
 
 def format_forecast_day(forecast_data: Dict, day_index: int) -> str:
-    """Форматирует прогноз на один день"""
+    """
+    Детальный прогноз на день по часам (8 прогнозов с шагом 3 часа)
+
+    Возвращает:
+    📅 Вс, 21.12:
+    ⏰ 00:00: 0.5°C, пасмурно
+    ⏰ 03:00: 0.6°C, пасмурно
+    ⏰ 06:00: 0.7°C, легкий дождь
+    ...
+    """
     try:
-        # Группируем по дням
+        # Группируем прогнозы по дням
         forecasts_by_day = {}
         for item in forecast_data['list']:
-            date = item['dt_txt'].split()[0]  # Берем только дату
-            if date not in forecasts_by_day:
-                forecasts_by_day[date] = []
-            forecasts_by_day[date].append(item)
+            date_str = item['dt_txt'].split()[0]  # Берем только дату
+            if date_str not in forecasts_by_day:
+                forecasts_by_day[date_str] = []
+            forecasts_by_day[date_str].append(item)
 
-        days = list(forecasts_by_day.keys())
+        # Сортируем дни по дате
+        days = sorted(list(forecasts_by_day.keys()))
+
         if day_index >= len(days):
             return "❌ Неверный индекс дня"
 
-        day = days[day_index]
-        day_forecasts = forecasts_by_day[day]
+        target_day = days[day_index]
+        day_forecasts = forecasts_by_day[target_day]
 
-        # Находим мин/макс температуру
+        # Сортируем прогнозы по времени внутри дня
+        day_forecasts.sort(key=lambda x: x['dt_txt'])
+
+        # Конвертируем дату в читаемый формат
+        date_obj = datetime.strptime(target_day, "%Y-%m-%d")
+        day_name = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][date_obj.weekday()]
+        date_formatted = date_obj.strftime("%d.%m")
+
+        # Создаем заголовок
+        lines = [f"📅 *{day_name}, {date_formatted}:*", ""]
+
+        # Добавляем каждый прогноз по часам
+        for forecast in day_forecasts:
+            # Извлекаем время
+            time_str = forecast['dt_txt'].split()[1]
+            hour_min = time_str[:5]  # ЧЧ:ММ
+
+            # Извлекаем данные
+            temp = forecast['main']['temp']
+            feels_like = forecast['main'].get('feels_like', temp)
+            description = forecast['weather'][0]['description'].lower()
+
+            # Эмодзи для времени суток
+            hour = int(time_str[:2])
+            if 6 <= hour < 12:
+                time_emoji = "🌅"  # утро
+            elif 12 <= hour < 18:
+                time_emoji = "☀️"  # день
+            elif 18 <= hour < 23:
+                time_emoji = "🌇"  # вечер
+            else:
+                time_emoji = "🌙"  # ночь
+
+            # Эмодзи для погоды
+            weather_emoji = '🌤️'
+            for key, value in WEATHER_EMOJIS.items():
+                if key in description:
+                    weather_emoji = value
+                    break
+
+            lines.append(
+                f"{time_emoji} *{hour_min}:* "
+                f"{weather_emoji} {temp:.1f}°C "
+                f"(ощущается {feels_like:.1f}°C), "
+                f"{description.capitalize()}"
+            )
+
+        # Добавляем статистику внизу
         temps = [f['main']['temp'] for f in day_forecasts]
         min_temp = min(temps)
         max_temp = max(temps)
 
-        # Берем наиболее частую погоду
-        weather_counts = {}
-        for f in day_forecasts:
-            desc = f['weather'][0]['description']
-            weather_counts[desc] = weather_counts.get(desc, 0) + 1
+        lines.append(f"\n📊 *Статистика дня:*")
+        lines.append(f"   🌡️ Диапазон: {min_temp:.1f}°C — {max_temp:.1f}°C")
+        lines.append(f"   📈 Прогнозов: {len(day_forecasts)}/8")
 
-        common_weather = max(weather_counts.items(), key=lambda x: x[1])[0]
+        return "\n".join(lines)
 
-        emoji = '🌤️'
-        for key, value in WEATHER_EMOJIS.items():
-            if key in common_weather.lower():
-                emoji = value
-                break
-
-        date_obj = datetime.strptime(day, "%Y-%m-%d")
-        day_name = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"][date_obj.weekday()]
-
-        return (f"{emoji} *{day_name}, {date_obj.strftime('%d.%m')}:*\n"
-                f"🌡️ Температура: от {min_temp:.1f}°C до {max_temp:.1f}°C\n"
-                f"📝 {common_weather.capitalize()}\n"
-                f"📊 Прогнозов на день: {len(day_forecasts)}")
     except Exception as e:
         return f"⚠️ Ошибка форматирования прогноза: {e}"
 

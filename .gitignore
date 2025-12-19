@@ -9,6 +9,9 @@ __pycache__/
 # Погода
 weather_cache.json
 
+# Данные пользователей
+User_Data.json
+
 # Distribution / packaging
 .Python
 build/
